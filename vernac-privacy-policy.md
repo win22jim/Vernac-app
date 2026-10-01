@@ -1,7 +1,7 @@
 # Privacy Policy for Vernac
 
 **Effective Date:** July 18, 2026
-**Last Updated:** July 18, 2026
+**Last Updated:** September 30, 2026
 
 This Privacy Policy explains how Vernac ("the app", "we", "us") handles your data. Vernac is a native macOS app that helps App Store developers localize their own App Store Connect listing metadata across languages. The app is published by Jeremy Littlewood ("the developer").
 
@@ -17,9 +17,10 @@ Vernac keeps very little on disk, all of it local to your Mac:
 
 - **Your App Store Connect API key** (Key ID, Issuer ID, and the `.p8` private key), stored in the macOS **Keychain**.
 - **A local access token** for the app's optional MCP endpoint (see Section 4), also stored in the Keychain.
-- **Your settings and per‑app controls** — such as which fields you've locked as "do not localize", which locales or platforms you've excluded, your chosen source language, and the app window size — stored in the standard macOS preferences (`UserDefaults`).
+- **Your settings and per‑app controls** — such as how each field is handled (localize, leave as‑is, or the same in every language), which locales or platforms you've excluded, your do‑not‑translate terms, your chosen source language, and the app window size — stored in the standard macOS preferences (`UserDefaults`).
+- **A read‑only bookmark to the one media folder you choose** (or open in Vernac) for screenshots, app previews and Game Center images, so Vernac can read it again after a relaunch. It lets Vernac read that folder and nothing else; Vernac never writes to it. Forget the folder in Vernac to remove it.
 
-Vernac does **not** maintain its own database of your listing content. When you open an app, Vernac fetches its current metadata **live** from App Store Connect and holds your edits in a temporary in‑memory workspace. Those edits exist only until you publish them to your App Store Connect draft (or discard them). Vernac uses **no iCloud, no CloudKit, and no cross‑device sync** — nothing you do in Vernac is replicated anywhere off your Mac by the app.
+Vernac does **not** maintain its own database of your listing content. When you open an app, Vernac fetches its current metadata **live** from App Store Connect and holds your edits in a temporary in‑memory workspace. Those edits — and any screenshots, app previews or images you stage — exist only until you publish or upload them to your App Store Connect draft (or discard them, or quit Vernac). Vernac uses **no iCloud, no CloudKit, and no cross‑device sync** — nothing you do in Vernac is replicated anywhere off your Mac by the app.
 
 ## 2. What the App Does NOT Collect
 
@@ -82,7 +83,7 @@ Vernac relies on Apple‑provided security primitives:
 - App Store Connect credentials and the MCP access token are stored in the macOS Keychain, device‑only.
 - All App Store Connect traffic is TLS‑encrypted and goes directly to Apple's official endpoint.
 - The MCP endpoint binds to the loopback interface only and requires a per‑install token.
-- Vernac is sandboxed and requests only the minimum capabilities it needs (read‑only access to files you explicitly choose, outgoing network to Apple, and its own loopback server).
+- Vernac is sandboxed and requests only the minimum capabilities it needs (read‑only access to the files and the one folder you choose or open in Vernac, outgoing network to Apple, and its own loopback server).
 
 No system is perfectly secure. If you discover a security vulnerability in Vernac, please contact the developer at the email address in Section 11 before disclosing it publicly.
 
