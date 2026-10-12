@@ -1,13 +1,13 @@
 # Privacy Policy for Vernac
 
 **Effective Date:** July 18, 2026
-**Last Updated:** September 30, 2026
+**Last Updated:** October 12, 2026
 
 This Privacy Policy explains how Vernac ("the app", "we", "us") handles your data. Vernac is a native macOS app that helps App Store developers localize their own App Store Connect listing metadata across languages. The app is published by Jeremy Littlewood ("the developer").
 
 ## Summary
 
-**Vernac does not collect, transmit, or sell any of your personal data to the developer or to any third party. The developer operates no servers and receives nothing from the app.** Vernac talks to two things, both on your behalf and with your explicit setup: Apple's App Store Connect API (using your own credentials), and Apple's on‑device Translation framework (which runs locally on your Mac). Your credentials and your content stay on your Mac and travel only between your Mac and Apple.
+**Vernac does not collect, transmit, or sell any of your personal data to the developer or to any third party. The developer operates no servers and receives nothing from the app.** Over the network, Vernac talks only to Apple, on your behalf: Apple's App Store Connect API (using your own credentials), and Apple's public iTunes lookup, which it asks for your apps' icons (sending only their bundle IDs; never with the sample data). Translation and shortening run on your Mac with Apple's on‑device Translation framework and Apple Intelligence's on‑device model. Your credentials and your content stay on your Mac and travel only between your Mac and Apple.
 
 If that summary is all you need, you can stop reading here. The rest of this document explains the details.
 
@@ -44,6 +44,7 @@ Vernac's core function requires the App Store Connect API so it can read and wri
 - The key is used only to sign short‑lived JSON Web Tokens (JWTs) that authenticate requests sent **directly from your Mac to Apple's official `api.appstoreconnect.apple.com` endpoint**.
 - Your API key is never transmitted to the developer, never stored in plain text, never written to logs, and never sent to any third party.
 - Vernac writes only to your **editable/draft** App Store Connect version. **It never submits your app for review** — there is no submit function in the app; the final "Submit for Review" is always an action you take yourself in App Store Connect.
+- To show your apps' icons, Vernac asks Apple's public iTunes lookup (`itunes.apple.com/lookup`) for each app's store icon, sending only that app's **bundle ID**, and then loads the icon image Apple returns. No credentials and no listing content are sent. With the sample data, it makes no such request.
 
 ## 4. Model Context Protocol (MCP) Endpoint
 
@@ -59,6 +60,8 @@ You can change the port from Vernac's menu‑bar item.
 ## 5. On‑Device Translation
 
 When you use Vernac's built‑in translation, it uses Apple's **on‑device Translation framework**. Translation runs locally on your Mac; the text of your listing is not sent to the developer, and language availability is checked on‑device. (Some languages may prompt macOS to download a language model from Apple the first time you use them; that download is between your Mac and Apple.)
+
+When a translation is too long for its field, Vernac can suggest shorter versions with **Apple Intelligence's on‑device model** (macOS 26 or later, where Apple Intelligence is turned on). It runs locally on your Mac — Vernac never uses Apple's server‑based Private Cloud Compute model — and the text is not sent to the developer or anyone else.
 
 ## 6. Diagnostic Logs
 

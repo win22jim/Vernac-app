@@ -1,6 +1,6 @@
 # Vernac MCP tools — reference
 
-A summary of the **79 tools** Vernac 1.1's MCP endpoint exposes, grouped by
+A summary of the **87 tools** Vernac 1.2's MCP endpoint exposes, grouped by
 purpose. The endpoint is a **fixed, closed set**: it cannot run code, shell
 commands or scripts, and no parameter is ever interpreted as one.
 
@@ -26,7 +26,15 @@ optional. Platforms: `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`. Game Center kinds:
 
 - **`get_vernac_status`** — call first. `ready` and each issue, the loaded app,
   unpublished work by kind (incl. `heldEdits`), running jobs and multi-request
-  writes, the granted folder and the hand-off command, `safeToRelaunch`.
+  writes, the granted folder and the hand-off command, `notifications`
+  (`enabled`, `authorization`), `onDeviceFit` (`available`, or why Apple
+  Intelligence can't shorten text on this Mac), `safeToRelaunch`.
+- **`set_notifications`** — `enabled` (**required**). The person's "Notify when
+  transfers finish" switch: a macOS notification when a job finishes while
+  they're away from Vernac's window, or when `request_screenshot_folder` waits
+  on them.
+  Counts and the app's name only; never prompts (provisional until the person
+  chooses Show Banners). Local.
 - **`list_accounts`** — stored API keys (key id, issuer id, which is active).
   Read-only; the person switches accounts in Vernac.
 - **`list_apps`** — the active account's apps (`id`, name, bundle id, primary
@@ -48,10 +56,12 @@ optional. Platforms: `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`. Game Center kinds:
 - **`get_status`** — per-locale status. `locale`.
 - **`get_diff`** — what `publish` would write (listing + Game Center text).
   `locales`, `scope` (`listing` / `gameCenter`), `detail` (from → to text).
-- **`get_controls`** — field policies and overrides, glossary, exclusions, source
-  locale.
+- **`get_controls`** — field policies and overrides, glossary (and
+  `glossaryProtection`: `masked` or `native`), exclusions, source locale.
 - **`check_compliance`** — local 2.3.7 / 5.2.5 / over-limit / required /
-  untranslated scan of every locale. `severity`, `locale`, `rule`.
+  untranslated / wrong-language scan of every locale. `severity`, `locale`,
+  `rule` (`wrongLanguage` is on-device language identification per paragraph;
+  never a blocker; keywords only ever a heads-up; sl-SI is not checked).
 - **`analyze_keywords`** — keyword budget per locale with a tightened
   `suggestion`. `locale`, `platform`, `only_improvable`.
 
@@ -62,7 +72,9 @@ optional. Platforms: `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`. Game Center kinds:
   keywords 100, promotional text 170, description/what's new 4000, URLs 255.
 - **`revert_field`** — `field`, `locale` (**required**), `platform`.
 - **`revert_all`** — `scope`: `listing` (default), `game_center`,
-  `screenshots`, `app_previews`, `game_center_images`, `everything`.
+  `screenshots`, `app_previews`, `creative_assets`, `game_center_images`,
+  `everything`. Refused while a job runs (an upload un-stages what lands; a
+  translation job stages as it goes): follow or cancel it first.
 - **`set_field_policy`** — `field`, `policy` (**required**: `localize`, `lock`
   = leave as-is, `mirror` = same in every language), `locale`, `platform`. App
   Name, Privacy Policy URL, Support URL and Marketing URL default to `mirror`.
@@ -79,13 +91,32 @@ optional. Platforms: `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`. Game Center kinds:
 
 ## Translation (on device, staged for review)
 
-- **`translate`** — `locale` (**required**), `platform`, `overwrite`. One
-  language.
+- **`translate`** — `locale` (**required**), `platform`, `overwrite`,
+  `fit_overflows`. One language. With `fit_overflows`, each overflow is
+  shortened inside the call (up to ~2 minutes a field on a slow model).
 - **`translate_all`** (job) — `locales`, `platforms` / `platform`, `overwrite`,
-  `wait_seconds`. Per-language counts; `needsDownload` lists languages whose
-  model isn't installed.
+  `fit_overflows`, `wait_seconds`. Per-language counts; `needsDownload` lists
+  languages whose model isn't installed.
+- **`suggest_fit`** — `locale`, `field` (**required**: `name`, `subtitle`,
+  `keywords`, `promotionalText`), `platform`. Up to three shorter versions of a
+  value over its limit, by Apple Intelligence ON THIS MAC (macOS 26+), each
+  checked by Vernac — within the limit, glossary terms kept, no price or Apple
+  product wording where App Review refuses it, in the right language — with its
+  `length` and a `backTranslation` into the source language. Stages nothing:
+  stage your pick with `set_field`. No prompt parameter. `{unavailable: reason}`
+  where it can't run. `fit_overflows: true` on `translate` / `translate_all`
+  stages the first passing version instead (`fitted`, origin `shortened`); an
+  overflow left says why — `fitUnavailable` (couldn't run) or `fitError` /
+  `fitErrors` (ran and failed, e.g. `busy`: try again shortly); with neither,
+  nothing passed. For the App Name, the app's own name isn't a term it must keep
+  — put any word of it that must stay in the glossary.
 - **`translate_gc`** (job) — `locales`, `overwrite`, `wait_seconds`. Game
   Center text.
+- All three report `strategy` (`highFidelity` / `lowLatency`, macOS 26.4+;
+  `mixed` across a job's languages), and — only when non-zero —
+  `glossaryFallbacks` (re-translated with masking because a term changed) and
+  `glossaryMissed` (staged values still missing a do-not-translate term: fix
+  them with `set_field` / `set_gc_fields`).
 
 ## Game Center — read and text
 
@@ -151,6 +182,23 @@ optional. Platforms: `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`. Game Center kinds:
 - **`delete_gc_images`** (dry run → code) — `images` (**required**;
   `[{entity_id, locale}]`).
 
+## Media slots
+
+Screenshots, app previews and creative assets live in App Store Connect's **App
+Asset Library**: an asset shown in a slot — a language and a **placement group**
+(`IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE`, `IPHONE_DUO_PROFILE`, `IPAD_13_PROFILE`,
+`MAC_PROFILE`…), read at run time from App Store Connect's catalog. Tools take
+`group` / `groups`; the deprecated `display_type(s)` and `preview_type(s)` still
+work as aliases. A slot that would end up over its group's `maxCount` makes any
+upload dry run `blocked`, with no code. Removing media removes **placements**
+(the files stay in the library) unless `delete_unused_assets` is set.
+
+- **`get_media_specs`** — what each slot takes now, from App Store Connect's own
+  catalog: sizes, `maxCount`, `requirement` (`required`,
+  `requiredWhenFamilyUsed`, `requiredFrom` with its date), legacy aliases.
+  `platform`, `placement_types`, `detail` (each spec: file types, alpha, largest
+  file, video rules). Works before an app is loaded.
+
 ## Screenshots
 
 - **`request_screenshot_folder`** — opens a picker for a person (prefer
@@ -158,48 +206,73 @@ optional. Platforms: `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`. Game Center kinds:
 - **`list_screenshots`** — the folder (`folderPath`, `layout`,
   `expectedSubfolders`) and compact counts; `detail`, `locale` / `locales`,
   `platform`.
-- **`get_screenshots`** — what App Store Connect holds, in order, with ids.
-  `locales`, `platform`, `display_types`, `detail`.
-- **`import_screenshots`** (local) — `paths` (in order), `platform`, `detail`.
-- **`unstage_screenshots`** (local) — `paths`, or `locale` + `display_type`
+- **`get_screenshots`** — what App Store Connect holds, in order, with placement
+  ids. `locales`, `platform`, `groups`, `detail`.
+- **`import_screenshots`** (local) — `paths` (in order), `platform`, `group`,
+  `detail`.
+- **`unstage_screenshots`** (local) — `paths`, or `locale` + `group`
   (+ `platform`), or `all`.
-- **`reorder_staged_screenshots`** (local) — `locale`, `display_type`, `order`
+- **`reorder_staged_screenshots`** (local) — `locale`, `group`, `order`
   (**required**; positions, paths or staged ids), `platform`.
-- **`upload_screenshots`** (dry run → code, job) — `replace`, `locales`,
-  `platform`, `display_types`, `wait_seconds`, `detail`.
+- **`upload_screenshots`** (dry run → code, job) — `replace` (every new file
+  goes up first; the slot is swapped only then, and put back if that fails),
+  `delete_unused_assets` (with `replace`), `locales`, `platform`, `groups`,
+  `wait_seconds`, `detail`.
 - **`delete_screenshots`** (dry run → code) — `locale` (**required**),
-  `display_types` or `ids`, `platform`.
-- **`reorder_screenshots`** (dry run → code) — `locale`, `display_type`,
-  `order` (**required**; every live id once), `platform`.
-- **`set_screenshot_shared`** (local) — `display_type`, `shared` (**required**).
+  `groups` or `ids`, `delete_unused_assets`, `platform`.
+- **`reorder_screenshots`** (dry run → code) — `locale`, `group`, `order`
+  (**required**; every live id once), `platform`.
+- **`set_screenshot_shared`** (local) — `group`, `shared` (**required**).
 
 ## App previews
 
 - **`get_app_previews`** — what App Store Connect holds. `locales`, `platform`,
-  `preview_types`, `detail`.
-- **`list_app_previews`** — videos in the folder, checked against Apple's rules.
-  `platform`, `detail`, `locale` / `locales`.
-- **`import_app_previews`** (local) — `paths`, `platform`, `preview_type`.
-- **`unstage_app_previews`** (local) — `paths`, or `locale` + `preview_type`
+  `groups`, `detail`.
+- **`list_app_previews`** — videos in the folder, checked against their group's
+  specs. `platform`, `detail`, `locale` / `locales`.
+- **`import_app_previews`** (local) — `paths`, `platform`, `group`.
+- **`unstage_app_previews`** (local) — `paths`, or `locale` + `group`
   (+ `platform`), or `all`.
-- **`reorder_staged_app_previews`** (local) — `locale`, `preview_type`, `order`
+- **`reorder_staged_app_previews`** (local) — `locale`, `group`, `order`
   (**required**), `platform`.
-- **`upload_app_previews`** (dry run → code, job) — `replace`, `locales`,
-  `platform`, `preview_types`, `wait_seconds`, `detail`.
+- **`upload_app_previews`** (dry run → code, job) — `replace`,
+  `delete_unused_assets` (with `replace`), `locales`, `platform`, `groups`,
+  `wait_seconds`, `detail`.
 - **`delete_app_previews`** (dry run → code) — `locale` (**required**),
-  `preview_types` or `ids`, `platform`.
-- **`reorder_app_previews`** (dry run → code) — `locale`, `preview_type`,
-  `order` (**required**), `platform`.
+  `groups` or `ids`, `delete_unused_assets`, `platform`.
+- **`reorder_app_previews`** (dry run → code) — `locale`, `group`, `order`
+  (**required**), `platform`.
 - **`set_app_preview_poster_frame`** — `path` (a staged video: local) or
-  `preview_id` + `locale` (an uploaded, `COMPLETE` video: dry run → code);
-  `time_code` (`HH:MM:SS:FF`) or `seconds` (+ `frame`), or `reset`.
+  `asset_id` (deprecated `preview_id`) + `locale` (an uploaded video: dry run →
+  code; refused once the video is approved); `time_code` (`HH:MM:SS:FF`) or
+  `seconds` (+ `frame`), or `reset`.
+
+## Creative assets (iOS: product page header, search results)
+
+One image or video per language and `kind` (`header`, `search_results`; `both`
+for either) on the editable iOS version — an upload always replaces.
+
+- **`get_creative_assets`** — what each language holds and has staged.
+  `locales`, `kind`, `detail`.
+- **`import_creative_assets`** (local) — every file of a creative size in the
+  language folders, or `paths`; `kind`, `detail`. A universal size stages as both.
+- **`unstage_creative_assets`** (local) — `paths`, or `locales` and/or `kind`,
+  or `all`.
+- **`upload_creative_assets`** (dry run → code, job) — `locales`, `kind`,
+  `delete_unused_assets`, `wait_seconds`, `detail`.
+- **`delete_creative_assets`** (dry run → code) — `locales` (**required**),
+  `kind`, `delete_unused_assets`.
 
 ## Transfers
 
 - **`get_transfer`** — `job_id` (**required**), `wait_seconds`, `detail`.
-  State, progress, and the report once finished.
+  State, progress, the report once finished, and `notified: true` when the
+  person was sent a notification about it (settled before the reply; a
+  starting call that sees its job finish says it too).
 - **`list_transfers`** — `running_only`.
-- **`cancel_transfer`** — `job_id` (**required**). Stops at the next item.
+- **`cancel_transfer`** — `job_id` (**required**). Stops at the next item; a
+  video stops while it goes up (its reservation is deleted; it stays staged),
+  and a language waiting on macOS's download prompt is let go of at once.
 
 ## Snapshots (listing text only)
 

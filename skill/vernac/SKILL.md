@@ -6,7 +6,9 @@ description: >-
   Model Context Protocol (MCP) tools. Use this whenever the user wants to
   localize, translate or edit their App Store listing (app name, subtitle,
   description, keywords, promotional text, what's new, URLs); add a language;
-  stage, order, upload or replace screenshots or app previews; localize, create
+  stage, order, upload or replace screenshots, app previews, or the product
+  page header and search results assets; look up App Store Connect's current
+  media sizes; localize, create
   or edit Game Center achievements, leaderboards, leaderboard sets, activities or
   challenges and their images; check a listing for App Review problems; review
   exactly what would change; or write changes to their App Store Connect draft.
@@ -19,7 +21,7 @@ description: >-
 Vernac is a native macOS app that reads a developer's own App Store Connect
 content, lets them translate and edit it, and writes it to their **editable
 draft**. When its MCP endpoint is connected you can drive all of it with a fixed
-set of 79 tools (prefixed by the connection name, e.g. `vernac`). Everything you
+set of 87 tools (prefixed by the connection name, e.g. `vernac`). Everything you
 do shows up live in Vernac's window, and the person can see and undo it there.
 
 ## Connecting Vernac (setup)
@@ -104,7 +106,7 @@ call and send it again.
   `whatsNew`, `marketingURL`, `supportURL` (per platform).
 - **`revert_field`** undoes one field; **`revert_all`** takes back a kind of
   unpublished work (`scope`: `listing` (default), `game_center`, `screenshots`,
-  `app_previews`, `game_center_images` or `everything`).
+  `app_previews`, `creative_assets`, `game_center_images` or `everything`).
 - Each field has a **policy** (`set_field_policy`): `localize` (per language),
   `lock` — **leave as-is**, never written, and *not* a fallback to the primary
   language (App Store Connect doesn't inherit listing text) — or `mirror` — the
@@ -144,17 +146,29 @@ Two paths, best combined:
   Apple's own localized terminology.
 - **Vernac's on-device translator:** **`translate_all`** sweeps many languages
   and returns per-language **counts**, not prose; `translate` does one language
-  and platform; **`translate_gc`** does Game Center text. They need Vernac's main
-  window open (it can be in the background). A language whose on-device model
+  and platform; **`translate_gc`** does Game Center text. On macOS 26 and later
+  they work with Vernac's window closed; on macOS 15–25 they need its main window
+  open (it can be in the background). A language whose on-device model
   isn't downloaded is **skipped** and listed under `needsDownload` — translate
   those yourself. `translate_all` and `translate_gc` run as jobs (below); `ok` is
   false if any language didn't translate. Re-running with `overwrite: false`
   fills only what is still empty.
+- **Too long for the limit?** A translation that overflows is reported, not
+  staged. Shorten it yourself and `set_field` it — or, where `get_vernac_status`
+  says `onDeviceFit: available`, ask **`suggest_fit`** for shorter versions
+  written by Apple Intelligence on the person's Mac (checked by Vernac, each with
+  a back-translation), or pass `fit_overflows: true` to `translate` /
+  `translate_all` to stage the first passing one. Either way it waits for the
+  person's review. Shortening usually takes seconds, but a slow or warming model
+  can take a minute or two per field — with several overflows, use
+  `translate_all` (a job) rather than `translate`.
 
 Register the person's own brand and feature words with **`set_glossary`** first
-— the on-device path masks them so they survive verbatim. Apple's product names
-and the app's own name are always protected. Read back only what you want to
-check, with `get_listing(locales: [...])`.
+— the on-device path protects them so they survive verbatim, in listing and
+Game Center text, and checks every result: a staged value that still lacks one
+is reported under `glossaryMissed` — fix it yourself. Apple's product names and
+the app's own name are always protected. Read back only what you want to check,
+with `get_listing(locales: [...])`.
 
 ## Writing to App Store Connect
 
@@ -178,24 +192,34 @@ separately (below).
 ### Long-running calls are jobs
 
 A confirmed `publish`, `upload_screenshots`, `upload_app_previews`,
-`upload_gc_images`, and `translate_all` / `translate_gc` run as jobs inside
+`upload_creative_assets`, `upload_gc_images`, and `translate_all` /
+`translate_gc` run as jobs inside
 Vernac. Each answers within `wait_seconds` (default 45, at most 110) with the
 report under `result`, or with a `jobId` while it carries on — your client timing
 out loses nothing. Then:
 
 - **`get_transfer`** `{job_id}` to follow it (it can wait up to 110 s per call);
   `list_transfers` shows every job; `cancel_transfer` stops one at the next item
-  boundary (what landed stays; the rest stays staged).
+  boundary — a video stops while it goes up, and a language waiting on macOS's
+  download prompt in the person's Translate All is let go of at once (what
+  landed stays; the rest stays staged).
 - **Never repeat the original call.** A second one while the first runs starts
   nothing (`started: false`); repeating a finished upload would send it twice.
+- **The person hears about it.** When a job finishes while they're away from
+  Vernac's window, Vernac posts them a macOS notification — counts and the
+  app's name only — the answer that reports the job finished (`get_transfer`,
+  or the starting call itself when it finished within its wait) says
+  `notified: true` when it did. `set_notifications`
+  turns that on or off; there is no way to send a notification with your own
+  text, and nothing you do can put a permission prompt in front of them.
   Read the result, then run a fresh dry run for whatever is still staged.
 
 The person sees the same job in Vernac's window and as a progress bar on its Dock
 icon.
 
-## Files: screenshots, app previews and Game Center images
+## Files: screenshots, app previews, creative assets and Game Center images
 
-All three come from **one folder**. The person is usually away, so hand it over
+All of them come from **one folder**. The person is usually away, so hand it over
 **unattended** from a shell:
 
 ```
@@ -216,37 +240,70 @@ Layout — the `fastlane deliver` shape, plus Game Center:
 ```
 <folder>/<locale>/1.png, 2.png …                  screenshots
 <folder>/<locale>/tour.mov                        app previews (.mov, .m4v, .mp4) beside them
+<folder>/<locale>/header.png, search.png          product page header / search results (by size)
 <folder>/gamecenter/<locale>/<vendor_id>.png      Game Center images
 <folder>/gamecenter/default/<vendor_id>.png       an activity's or challenge's default image
 ```
 
 Tool paths are **relative to that folder**; absolute paths and `..` are refused.
-Then **list → import (stages, sends nothing) → upload (dry run → code → job)**:
+Then **list → import (stages, sends nothing) → upload (dry run → code → job)**.
+
+**Sizes come from App Store Connect, not from memory.** Media lives in App Store
+Connect's **App Asset Library**: a file is an asset in the app's library, shown
+in a slot — a language and a **placement group** such as
+`IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE`, `IPHONE_DUO_PROFILE`, `IPAD_13_PROFILE` or
+`MAC_PROFILE`. Apple adds devices and changes sizes and limits without notice, so
+call **`get_media_specs`** (narrow it with `platform` and `placement_types`) for
+each group's accepted sizes, its `maxCount` and whether it is required. An iOS
+app needs **iPhone with Dynamic Island (medium display)** screenshots; iPad
+13-inch once it shows iPad screenshots; iPhone Duo is announced as required from
+April 2027. `review_queue` reports what is missing as `requiredMedia`.
 
 - **Screenshots:** `list_screenshots` → `import_screenshots` →
   `upload_screenshots`. The folder names the language, the pixel size picks the
-  display type. At most 10 per slot. **Order matters:** position 1 is the hero
+  **group** (name one with `group` to choose; the old display types such as
+  `APP_IPHONE_67` still work as aliases, `display_types` for `groups`). At most
+  the group's `maxCount` per slot. **Order matters:** position 1 is the hero
   image in search results; staged order is upload order (`paths` in list order,
   otherwise natural file-name order — `2.png` before `10.png`). Fix staged order
   with `reorder_staged_screenshots`, take files back with
-  `unstage_screenshots`. An upload **adds** to a slot by default; `replace: true`
-  clears each target slot first (the dry run's `willDelete` lists what goes).
-  Scope any upload with `locales`, `platform`, `display_types`. Confirm what
+  `unstage_screenshots`. An upload **adds** to a slot by default. With
+  `replace: true` every new file is uploaded **before** the slot is touched;
+  only then do the old ones come off and the new ones go on — and if that fails
+  part-way, the old set is put back (the dry run's `willDelete` lists what comes
+  off). Scope any upload with `locales`, `platform`, `groups`. Confirm what
   landed with `get_screenshots`; fix live order with `reorder_screenshots`;
   clear slots or single screenshots with `delete_screenshots`.
 - **App previews:** `list_app_previews` → `import_app_previews` →
-  `upload_app_previews`. Apple's rules are checked before staging: 15–30 s,
-  ≤ 500 MB, ≤ 30 fps, H.264 or ProRes 422 HQ, and an **audio track** (a silent
-  stereo AAC track is fine — without one App Store Connect's processing fails).
-  At most 3 per slot. After upload, `PROCESSING` is normal for up to 24 hours.
-  Set a poster frame with `set_app_preview_poster_frame` (`time_code`
-  `"HH:MM:SS:FF"`, or `seconds` + `frame`): on a staged video by `path`, or on
-  an uploaded one by `preview_id` once it is `COMPLETE` (dry run → code).
+  `upload_app_previews`. Each video is checked against its group's specs before
+  staging (length, size, frame rate, file size — `get_media_specs` has the
+  numbers), plus H.264 or ProRes 422 HQ and an **audio track** (a silent stereo
+  AAC track is fine — without one App Store Connect's processing fails). After
+  upload, `processing` is normal for up to 24 hours. Set a poster frame with
+  `set_app_preview_poster_frame` (`time_code` `"HH:MM:SS:FF"`, or `seconds` +
+  `frame`): on a staged video by `path` (it goes up with the video), or on an
+  uploaded one by `asset_id` (`preview_id` still works) — dry run → code. The
+  frame belongs to the video, everywhere it is shown; a video still processing
+  can take one, an **approved** one can't (upload it again instead).
+- **Product page header and search results (creative assets):** iOS apps only,
+  on the editable iOS version, shown on iOS 27 and later. `get_creative_assets`
+  (what each language holds) → `import_creative_assets` →
+  `upload_creative_assets`; `unstage_creative_assets`, `delete_creative_assets`.
+  A slot is a language and a `kind` — `header` or `search_results` (`both` for
+  either) — and holds **one** image or video, so an upload always **replaces**.
+  The size picks the slot; a universal size (5244×2950 today) fills both and
+  goes up once. Videos need no audio track; no poster frame is sent.
 - **Game Center images:** `list_gc_images` → `import_gc_images` →
   `upload_gc_images`. 1024×1024 for achievements, leaderboards and sets;
   3840×2160 for activities and challenges; PNG/JPEG, RGB, no transparency. An
   upload **replaces** a language's existing image. An entity needs text in a
   language before it can have an image there — publish the text first.
+
+Removing media takes it off its slot; the file stays in App Store Connect's
+Asset Library, as it does there. Pass **`delete_unused_assets: true`** to a
+delete — or to a replace — to also delete files then shown nowhere that App Store
+Connect still lets go of (listed in the dry run and covered by its code; after a
+replace, only once each slot's new file is read back processed).
 
 Staged media is **never** part of `publish` — `review_queue`, `get_diff` and
 the publish dry run count it so a release can't look finished when it isn't.
@@ -290,23 +347,26 @@ text** only. A restore first saves the current state as a restore point
   and nothing is written. Call `refresh` (never `load_app`, which would discard
   staged work), review the new plan, and confirm again.
 - **Over-limit fields** — blocked; trim and stage again.
-- **A slot over its limit** — an app preview slot over 3 is blocked with no
-  code; a screenshot slot over 10 is flagged `overLimit` in the dry run (it still
-  returns a code, but App Store Connect refuses the extra screenshots). Either
-  way, use `replace`, unstage some, or scope that slot out before confirming.
+- **A slot over its limit** — any slot (screenshots, previews, creative assets)
+  that would end up over its group's `maxCount` makes the dry run `blocked`,
+  with **no code**. Use `replace`, unstage some, or scope that slot out.
 
 ## Before a submission
 
 Run `check_compliance` over every language: price or "free" wording outside the
 description (Guideline 2.3.7), Apple product names in the name, subtitle or
 keywords (5.2.5), over-limit and empty required fields, languages still
-identical to the source. A *translation* can reintroduce a term the English copy
-never had. Then `review_queue` for anything still outstanding.
+identical to the source, and text in the wrong language (`wrongLanguage` — a
+whole field is a warning; some paragraphs a heads-up whose `match` quotes the
+first one's opening words; keywords always a heads-up, since another language
+there can be deliberate — ask before translating them). A *translation* can reintroduce a term the English
+copy never had, and a mis-targeted `set_field` puts one language's text in
+another's listing. Then `review_queue` for anything still outstanding.
 
 ## Exact parameters
 
 The connection's `tools/list` is authoritative for names, types and required
-fields. A grouped summary of all 79 tools is in
+fields. A grouped summary of all 87 tools is in
 [references/mcp-tools.md](references/mcp-tools.md).
 
 ## Good habits
